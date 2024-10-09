@@ -90,7 +90,7 @@ def yt_transcribe(yt_url, task, max_filesize=75.0):
     return html_embed_str, text
 
 
-demo = gr.Blocks()
+demo = gr.Blocks(theme=gr.themes.Ocean())
 
 mf_transcribe = gr.Interface(
     fn=transcribe,
@@ -143,5 +143,5 @@ yt_transcribe = gr.Interface(
 with demo:
     gr.TabbedInterface([mf_transcribe, file_transcribe, yt_transcribe], ["Microphone", "Audio file", "YouTube"])
 
-demo.queue().launch()
+demo.queue().launch(ssr_mode=False)
 
