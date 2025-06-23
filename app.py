@@ -24,13 +24,33 @@ pipe = pipeline(
 )
 
 
+def to_srt(segments):
+    def srt_timestamp(seconds):
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        ms = int((seconds - int(seconds)) * 1000)
+        return f"{h:02}:{m:02}:{s:02},{ms:03}"
+
+    srt_lines = []
+    for i, seg in enumerate(segments, 1):
+        start = srt_timestamp(seg['start'])
+        end = srt_timestamp(seg['end'])
+        text = seg['text'].strip()
+        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    return "\n".join(srt_lines)
+
 @spaces.GPU
-def transcribe(inputs, task):
+def transcribe(inputs, task, as_srt=False):
     if inputs is None:
         raise gr.Error("No audio file submitted! Please upload or record an audio file before submitting your request.")
 
-    text = pipe(inputs, batch_size=BATCH_SIZE, generate_kwargs={"task": task}, return_timestamps=True)["text"]
-    return  text
+    result = pipe(inputs, batch_size=BATCH_SIZE, generate_kwargs={"task": task}, return_timestamps=True)
+    if as_srt:
+        if "segments" not in result:
+            raise gr.Error("SRT出力にはタイムスタンプ付きのセグメント情報が必要です。")
+        return to_srt(result["segments"])
+    return result["text"]
 
 
 def _return_yt_html_embed(yt_url):
@@ -92,53 +112,9 @@ def yt_transcribe(yt_url, task, max_filesize=75.0):
 
 demo = gr.Blocks(theme=gr.themes.Ocean())
 
-mf_transcribe = gr.Interface(
-    fn=transcribe,
-    inputs=[
-        gr.Audio(sources="microphone", type="filepath"),
-        gr.Radio(["transcribe", "translate"], label="Task", value="transcribe"),
-    ],
-    outputs="text",
-    title="Whisper Large V3 Turbo: Transcribe Audio",
-    description=(
-        "Transcribe long-form microphone or audio inputs with the click of a button! Demo uses the"
-        f" checkpoint [{MODEL_NAME}](https://huggingface.co/{MODEL_NAME}) and 🤗 Transformers to transcribe audio files"
-        " of arbitrary length."
-    ),
-    allow_flagging="never",
-)
-
-file_transcribe = gr.Interface(
-    fn=transcribe,
-    inputs=[
-        gr.Audio(sources="upload", type="filepath", label="Audio file"),
-        gr.Radio(["transcribe", "translate"], label="Task", value="transcribe"),
-    ],
-    outputs="text",
-    title="Whisper Large V3: Transcribe Audio",
-    description=(
-        "Transcribe long-form microphone or audio inputs with the click of a button! Demo uses the"
-        f" checkpoint [{MODEL_NAME}](https://huggingface.co/{MODEL_NAME}) and 🤗 Transformers to transcribe audio files"
-        " of arbitrary length."
-    ),
-    allow_flagging="never",
-)
-
-yt_transcribe = gr.Interface(
-    fn=yt_transcribe,
-    inputs=[
-        gr.Textbox(lines=1, placeholder="Paste the URL to a YouTube video here", label="YouTube URL"),
-        gr.Radio(["transcribe", "translate"], label="Task", value="transcribe")
-    ],
-    outputs=["html", "text"],
-    title="Whisper Large V3: Transcribe YouTube",
-    description=(
-        "Transcribe long-form YouTube videos with the click of a button! Demo uses the checkpoint"
-        f" [{MODEL_NAME}](https://huggingface.co/{MODEL_NAME}) and 🤗 Transformers to transcribe video files of"
-        " arbitrary length."
-    ),
-    allow_flagging="never",
-)
+from tab.mf_transcribe import mf_transcribe
+from tab.file_transcribe import file_transcribe
+from tab.yt_transcribe import yt_transcribe
 
 with demo:
     gr.TabbedInterface([mf_transcribe, file_transcribe, yt_transcribe], ["Microphone", "Audio file", "YouTube"])
