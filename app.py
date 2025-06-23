@@ -21,36 +21,63 @@ pipe = pipeline(
     model=MODEL_NAME,
     chunk_length_s=30,
     device=device,
+    return_timestamps=True,  # タイムスタンプを有効にする
 )
 
 
-def to_srt(segments):
-    def srt_timestamp(seconds):
-        h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
-        s = int(seconds % 60)
-        ms = int((seconds - int(seconds)) * 1000)
-        return f"{h:02}:{m:02}:{s:02},{ms:03}"
+# --- SRT生成ユーティリティ（参考コードより） ---
+from datetime import timedelta
 
-    srt_lines = []
+def format_timestamp(seconds):
+    """秒数をSRT形式のタイムスタンプに変換"""
+    td = timedelta(seconds=seconds)
+    total_seconds = int(td.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    milliseconds = int((td.total_seconds() - total_seconds) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+
+def create_srt_content(transcription_result):
+    """Whisperの結果からSRT形式のコンテンツを生成"""
+    # 'chunks'優先、なければ'segments'、どちらもなければ'text'
+    segments = None
+    if 'chunks' in transcription_result:
+        segments = transcription_result['chunks']
+        get_start = lambda seg: seg['timestamp'][0]
+        get_end = lambda seg: seg['timestamp'][1]
+        get_text = lambda seg: seg['text']
+    elif 'segments' in transcription_result:
+        segments = transcription_result['segments']
+        get_start = lambda seg: seg['start']
+        get_end = lambda seg: seg['end']
+        get_text = lambda seg: seg['text']
+    else:
+        # 単一テキストのみ
+        return "1\n00:00:00,000 --> 00:01:00,000\n" + transcription_result.get('text', '')
+
+    srt_content = []
     for i, seg in enumerate(segments, 1):
-        start = srt_timestamp(seg['start'])
-        end = srt_timestamp(seg['end'])
-        text = seg['text'].strip()
-        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
-    return "\n".join(srt_lines)
+        start_time = format_timestamp(get_start(seg))
+        end_time = format_timestamp(get_end(seg))
+        text = get_text(seg).strip()
+        if not text:
+            continue
+        srt_content.append(f"{i}")
+        srt_content.append(f"{start_time} --> {end_time}")
+        srt_content.append(text)
+        srt_content.append("")  # 空行
+    return "\n".join(srt_content)
 
 @spaces.GPU
 def transcribe(inputs, task, as_srt=False):
     if inputs is None:
         raise gr.Error("No audio file submitted! Please upload or record an audio file before submitting your request.")
 
-    result = pipe(inputs, batch_size=BATCH_SIZE, generate_kwargs={"task": task}, return_timestamps=True)
+    result = pipe(inputs, batch_size=BATCH_SIZE, generate_kwargs={"task": task})
     if as_srt:
-        if "segments" not in result:
-            raise gr.Error("SRT出力にはタイムスタンプ付きのセグメント情報が必要です。")
-        return to_srt(result["segments"])
-    return result["text"]
+        return create_srt_content(result)
+    return result.get("text", "")
 
 
 def _return_yt_html_embed(yt_url):
