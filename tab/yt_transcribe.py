@@ -3,7 +3,7 @@ from app import yt_transcribe as yt_transcribe_fn, MODEL_NAME
 import tempfile
 
 def yt_transcribe_wrap(yt_url, task, as_srt):
-    html, text = yt_transcribe_fn(yt_url, task)
+    html, text = yt_transcribe_fn(yt_url, task, as_srt=as_srt)
     if as_srt:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".srt", mode="w", encoding="utf-8") as f:
             f.write(text)
